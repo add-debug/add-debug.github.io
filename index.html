@@ -142,294 +142,223 @@ h2 {
 
   <script>
 const perguntasUsadas = new Set();
-
 let acertos = 0;
 let erros = 0;
 let totalPerguntas = 0;
 const limitePerguntas = 20;
+let tempoRestante = 15;
+let intervaloTimer;
 
+// --- Listeners de Botões ---
 document.getElementById("iniciarBtn").addEventListener("click", () => {
-  document.getElementById("iniciarBtn").style.display = "none";
-  document.getElementById("pergunta").style.display = "block";
-  document.getElementById("novoBtn").style.display = "inline-block";
-  document.getElementById("contador").style.display = "block";
-  carregarPergunta();
+    document.getElementById("iniciarBtn").style.display = "none";
+    document.getElementById("reiniciarBtn").style.display = "none";
+    document.getElementById("voltarBtn").style.display = "none";
+    document.getElementById("pergunta").style.display = "block";
+    document.getElementById("novoBtn").style.display = "inline-block";
+    document.getElementById("contador").style.display = "block";
+    perguntasUsadas.clear(); // Limpa perguntas usadas ao iniciar
+    carregarPergunta();
 });
 
 document.getElementById("novoBtn").addEventListener("click", () => {
-  if (totalPerguntas < limitePerguntas) {
-    carregarPergunta();
-  }
+    if (totalPerguntas < limitePerguntas) {
+        carregarPergunta();
+    }
 });
 
 document.getElementById("reiniciarBtn").addEventListener("click", reiniciarQuiz);
 document.getElementById("voltarBtn").addEventListener("click", voltarInicio);
-
-async function carregarPergunta() {
-  document.getElementById("pergunta").innerText = "Carregando pergunta...";
-  document.getElementById("opcoes").innerHTML = "";
-  document.getElementById("resultado").innerText = "";
-
-  try {
-    const resposta = await fetch("https://tryvia.ptr.red/api.php?amount=1&category=18");
-    const dados = await resposta.json();
-
-    if (!dados || !dados.results || dados.results.length === 0) {
-      document.getElementById("pergunta").innerText = "Não foi possível carregar pergunta.";
-      return;
-    }
-
-    const perguntaObj = dados.results[0];
-    document.getElementById("pergunta").innerHTML = decodeHtml(perguntaObj.question);
-
-    let opcoes = [...perguntaObj.incorrect_answers, perguntaObj.correct_answer];
-    opcoes.sort(() => Math.random() - 0.5);
-
-    const opcoesDiv = document.getElementById("opcoes");
-    opcoes.forEach(op => {
-      const btn = document.createElement("button");
-      btn.className = "opcao-btn";
-      btn.innerText = decodeHtml(op);
-      btn.onclick = () => {
-        totalPerguntas++;
-        if (op === perguntaObj.correct_answer) {
-          acertos++;
-          document.getElementById("resultado").innerHTML = `✅ Acertou!`;
-          atualizarContadores("acertosContador");
-        } else {
-          erros++;
-          document.getElementById("resultado").innerHTML =
-            `❌ Errou!<br>Resposta certa: ${decodeHtml(perguntaObj.correct_answer)}`;
-          atualizarContadores("errosContador");
-	clearInterval(intervaloTimer);
-        }
-
-        if (totalPerguntas >= limitePerguntas) {
-          encerrarQuiz();
-        }
-      };
-      opcoesDiv.appendChild(btn);
-    });
-
-  } catch (erro) {
-    console.error("Erro ao buscar API:", erro);
-    document.getElementById("pergunta").innerText = "Erro ao carregar pergunta.";
-  }
-}
-
-function decodeHtml(html) {
-  const txt = document.createElement("textarea");
-  txt.innerHTML = html;
-  return txt.value;
-}
-
-function atualizarContadores(id) {
-  document.getElementById("acertosContador").innerText = `✅ Acertos: ${acertos}`;
-  document.getElementById("errosContador").innerText = `❌ Erros: ${erros}`;
-
-  const el = document.getElementById(id);
-  el.classList.remove("pulso");
-  void el.offsetWidth;
-  el.classList.add("pulso");
-}
-
-function encerrarQuiz() {
-  document.getElementById("pergunta").innerText = "🐮 Parabéns! Você completou o quiz!";
-  document.getElementById("opcoes").innerHTML = "";
-  document.getElementById("novoBtn").style.display = "none";
-  document.getElementById("reiniciarBtn").style.display = "inline-block";
-  document.getElementById("voltarBtn").style.display = "inline-block";
-}
-
-function reiniciarQuiz() {
-  acertos = 0;
-  erros = 0;
-  totalPerguntas = 0;
-  document.getElementById("reiniciarBtn").style.display = "none";
-  document.getElementById("voltarBtn").style.display = "none";
-  document.getElementById("resultado").innerText = "";
-  atualizarContadores();
-  carregarPergunta();
-  document.getElementById("novoBtn").style.display = "inline-block";
-}
-
-function voltarInicio() {
-  location.reload();
-}
 document.getElementById("resetBtn").addEventListener("click", resetarQuiz);
 
-function resetarQuiz() {
-  acertos = 0;
-  erros = 0;
-  totalPerguntas = 0;
-  indiceAtual = 0; // se estiver usando perguntas fixas
+// --- Funções Auxiliares ---
 
-  document.getElementById("resultado").innerText = "";
-  document.getElementById("opcoes").innerHTML = "";
-  document.getElementById("pergunta").innerText = "Quiz reiniciado!";
-  atualizarContadores();
-
-  document.getElementById("novoBtn").style.display = "inline-block";
-  document.getElementById("reiniciarBtn").style.display = "none";
-  document.getElementById("voltarBtn").style.display = "none";
+function decodeHtml(html) {
+    const txt = document.createElement("textarea");
+    txt.innerHTML = html;
+    return txt.value;
 }
 
 function atualizarTimer() {
-  document.getElementById("timer").innerText = `⏱️ Tempo restante: ${tempoRestante}s`;
+    document.getElementById("timer").innerText = `⏱️ Tempo restante: ${tempoRestante}s`;
 }
 
+function atualizarContadores(id) {
+    document.getElementById("acertosContador").innerText = `✅ Acertos: ${acertos}`;
+    document.getElementById("errosContador").innerText = `❌ Erros: ${erros}`;
+
+    if (id) {
+        const el = document.getElementById(id);
+        el.classList.remove("pulso");
+        void el.offsetWidth; // Força o reflow para reiniciar a animação
+        el.classList.add("pulso");
+    }
+}
+
+// --- Funções de Controle do Quiz ---
+
 async function carregarPergunta() {
-  clearInterval(intervaloTimer); // limpa timer anterior
-  tempoRestante = 15;
-  atualizarTimer();
-
-  intervaloTimer = setInterval(() => {
-    tempoRestante--;
+    // 1. Resetar Timer
+    clearInterval(intervaloTimer);
+    tempoRestante = 15;
     atualizarTimer();
+    document.getElementById("resultado").innerText = "";
 
-    if (tempoRestante <= 0) {
-      clearInterval(intervaloTimer);
-      document.getElementById("resultado").innerHTML = "⏰ Tempo esgotado!";
-      erros++;
-      atualizarContadores("errosContador");
-      document.getElementById("opcoes").innerHTML = ""; // desativa opções
+    // 2. Iniciar Timer
+    intervaloTimer = setInterval(() => {
+        tempoRestante--;
+        atualizarTimer();
+
+        if (tempoRestante <= 0) {
+            clearInterval(intervaloTimer);
+            // Verifica se a pergunta ainda está sendo exibida antes de contar o erro
+            if (document.getElementById("opcoes").children.length > 0) {
+                totalPerguntas++;
+                erros++;
+                document.getElementById("resultado").innerHTML = "⏰ Tempo esgotado!";
+                atualizarContadores("errosContador");
+                document.getElementById("opcoes").innerHTML = ""; // Desativa opções
+                
+                if (totalPerguntas >= limitePerguntas) {
+                    encerrarQuiz();
+                }
+            }
+        }
+    }, 1000);
+
+    // 3. Buscar Pergunta
+    document.getElementById("pergunta").innerText = "Carregando pergunta...";
+    document.getElementById("opcoes").innerHTML = "";
+
+    let perguntaObj;
+    let tentativa = 0;
+    let perguntaUnicaEncontrada = false;
+
+    // Tenta buscar uma pergunta não repetida
+    while (!perguntaUnicaEncontrada && tentativa < 5) {
+        try {
+            // Nova API OpenTDB (ajustada para amount=1 para carregar uma por vez)
+            const resposta = await fetch(`https://opentdb.com/api.php?amount=1&encode=base64&nocache=${Date.now()}`);
+            const dados = await resposta.json();
+
+            if (!dados || !dados.results || dados.results.length === 0) {
+                document.getElementById("pergunta").innerText = "Não foi possível carregar pergunta.";
+                clearInterval(intervaloTimer);
+                return;
+            }
+            
+            // Decodifica a pergunta, pois usamos 'encode=base64' para evitar problemas de caracteres
+            perguntaObj = dados.results[0];
+            perguntaObj.question = decodeHtml(atob(perguntaObj.question));
+            perguntaObj.correct_answer = decodeHtml(atob(perguntaObj.correct_answer));
+            perguntaObj.incorrect_answers = perguntaObj.incorrect_answers.map(ans => decodeHtml(atob(ans)));
+
+            if (!perguntasUsadas.has(perguntaObj.question)) {
+                perguntasUsadas.add(perguntaObj.question);
+                perguntaUnicaEncontrada = true;
+            }
+            tentativa++;
+        } catch (erro) {
+            console.error("Erro ao buscar API:", erro);
+            document.getElementById("pergunta").innerText = "Erro ao carregar pergunta.";
+            clearInterval(intervaloTimer);
+            return;
+        }
     }
-  }, 1000);
 
-  document.getElementById("pergunta").innerText = "Carregando pergunta...";
-  document.getElementById("opcoes").innerHTML = "";
-  document.getElementById("resultado").innerText = "";
+    if (!perguntaObj) return; // Se falhou em 5 tentativas
 
-  try {
-    const resposta = await fetch("https://opentdb.com/api.php?amount=10");
-    const dados = await resposta.json();
+    document.getElementById("pergunta").innerHTML = perguntaObj.question;
 
-    if (!dados || !dados.results || dados.results.length === 0) {
-      document.getElementById("pergunta").innerText = "Não foi possível carregar pergunta.";
-      return;
-    }
-
-    const perguntaObj = dados.results[0];
-    document.getElementById("pergunta").innerHTML = decodeHtml(perguntaObj.question);
-
+    // 4. Exibir Opções
     let opcoes = [...perguntaObj.incorrect_answers, perguntaObj.correct_answer];
     opcoes.sort(() => Math.random() - 0.5);
 
     const opcoesDiv = document.getElementById("opcoes");
     opcoes.forEach(op => {
-      const btn = document.createElement("button");
-      btn.className = "opcao-btn";
-      btn.innerText = decodeHtml(op);
-      btn.onclick = () => {
-        clearInterval(intervaloTimer);
-        totalPerguntas++;
-        if (op === perguntaObj.correct_answer) {
-          acertos++;
-          document.getElementById("resultado").innerHTML = `✅ Acertou!`;
-          atualizarContadores("acertosContador");
-        } else {
-          erros++;
-          document.getElementById("resultado").innerHTML =
-            `❌ Errou!<br>Resposta certa: ${decodeHtml(perguntaObj.correct_answer)}`;
-          atualizarContadores("errosContador");
-        }
+        const btn = document.createElement("button");
+        btn.className = "opcao-btn";
+        btn.innerText = op;
+        btn.onclick = () => {
+            // Desativar todos os botões após a seleção para evitar cliques múltiplos
+            Array.from(opcoesDiv.children).forEach(button => button.disabled = true);
+            
+            clearInterval(intervaloTimer);
+            totalPerguntas++;
+            
+            if (op === perguntaObj.correct_answer) {
+                acertos++;
+                document.getElementById("resultado").innerHTML = `✅ Acertou!`;
+                btn.style.backgroundColor = '#4CAF50'; // Verde
+                atualizarContadores("acertosContador");
+            } else {
+                erros++;
+                document.getElementById("resultado").innerHTML =
+                    `❌ Errou!<br>Resposta certa: ${perguntaObj.correct_answer}`;
+                btn.style.backgroundColor = '#F44336'; // Vermelho para a errada
+                // Destaca a resposta correta
+                Array.from(opcoesDiv.children).find(b => b.innerText === perguntaObj.correct_answer).style.backgroundColor = '#4CAF50';
+                atualizarContadores("errosContador");
+            }
 
-        if (totalPerguntas >= limitePerguntas) {
-          encerrarQuiz();
-        }
-      };
-      opcoesDiv.appendChild(btn);
+            if (totalPerguntas >= limitePerguntas) {
+                encerrarQuiz();
+            }
+        };
+        opcoesDiv.appendChild(btn);
     });
-
-  } catch (erro) {
-    console.error("Erro ao buscar API:", erro);
-    document.getElementById("pergunta").innerText = "Erro ao carregar pergunta.";
-  }
 }
 
-let tempoRestante = 15;
-let intervaloTimer;
- 
-async function carregarPergunta() {
-  clearInterval(intervaloTimer);
-  tempoRestante = 15;
-  atualizarTimer();
+function encerrarQuiz() {
+    clearInterval(intervaloTimer);
+    document.getElementById("pergunta").innerText = `🎉 Quiz Finalizado! Você acertou ${acertos} de ${limitePerguntas} perguntas.`;
+    document.getElementById("opcoes").innerHTML = "";
+    document.getElementById("novoBtn").style.display = "none";
+    document.getElementById("reiniciarBtn").style.display = "inline-block";
+    document.getElementById("voltarBtn").style.display = "inline-block";
+}
 
-  intervaloTimer = setInterval(() => {
-    tempoRestante--;
+function reiniciarQuiz() {
+    acertos = 0;
+    erros = 0;
+    totalPerguntas = 0;
+    perguntasUsadas.clear();
+    clearInterval(intervaloTimer);
+
+    document.getElementById("reiniciarBtn").style.display = "none";
+    document.getElementById("voltarBtn").style.display = "none";
+    document.getElementById("resultado").innerText = "";
+    atualizarContadores();
+    carregarPergunta();
+    document.getElementById("novoBtn").style.display = "inline-block";
+}
+
+function voltarInicio() {
+    location.reload(); // Recarrega a página para voltar ao estado inicial
+}
+
+function resetarQuiz() {
+    clearInterval(intervaloTimer);
+    acertos = 0;
+    erros = 0;
+    totalPerguntas = 0;
+    perguntasUsadas.clear();
+
+    document.getElementById("resultado").innerText = "";
+    document.getElementById("opcoes").innerHTML = "";
+    document.getElementById("pergunta").style.display = "none";
+    document.getElementById("contador").style.display = "none";
+    document.getElementById("novoBtn").style.display = "none";
+    document.getElementById("reiniciarBtn").style.display = "none";
+    document.getElementById("voltarBtn").style.display = "none";
+    document.getElementById("iniciarBtn").style.display = "inline-block";
+    
+    // Reseta o timer visualmente para o início
+    tempoRestante = 15;
     atualizarTimer();
-
-    if (tempoRestante <= 0) {
-      clearInterval(intervaloTimer);
-      document.getElementById("resultado").innerHTML = "⏰ Tempo esgotado!";
-      erros++;
-      atualizarContadores("errosContador");
-      document.getElementById("opcoes").innerHTML = "";
-    }
-  }, 1000);
-
-  document.getElementById("pergunta").innerText = "Carregando pergunta...";
-  document.getElementById("opcoes").innerHTML = "";
-  document.getElementById("resultado").innerText = "";
-
-  let perguntaObj;
-  let tentativa = 0;
-
-  do {
-    try {
-      const resposta = await fetch(`https://opentdb.com/api.php?amount=10&nocache=${Date.now()}`);
-      const dados = await resposta.json();
-
-      if (!dados || !dados.results || dados.results.length === 0) {
-        document.getElementById("pergunta").innerText = "Não foi possível carregar pergunta.";
-        return;
-      }
-
-      perguntaObj = dados.results[0];
-      tentativa++;
-
-    } catch (erro) {
-      console.error("Erro ao buscar API:", erro);
-      document.getElementById("pergunta").innerText = "Erro ao carregar pergunta.";
-      return;
-    }
-
-  } while (perguntasUsadas.has(perguntaObj.question) && tentativa < 5);
-
-  perguntasUsadas.add(perguntaObj.question);
-  document.getElementById("pergunta").innerHTML = decodeHtml(perguntaObj.question);
-
-  let opcoes = [...perguntaObj.incorrect_answers, perguntaObj.correct_answer];
-  opcoes.sort(() => Math.random() - 0.5);
-
-  const opcoesDiv = document.getElementById("opcoes");
-  opcoes.forEach(op => {
-    const btn = document.createElement("button");
-    btn.className = "opcao-btn";
-    btn.innerText = decodeHtml(op);
-    btn.onclick = () => {
-      clearInterval(intervaloTimer);
-      totalPerguntas++;
-      if (op === perguntaObj.correct_answer) {
-        acertos++;
-        document.getElementById("resultado").innerHTML = `✅ Acertou!`;
-        atualizarContadores("acertosContador");
-      } else {
-        erros++;
-        document.getElementById("resultado").innerHTML =
-          `❌ Errou!<br>Resposta certa: ${decodeHtml(perguntaObj.correct_answer)}`;
-        atualizarContadores("errosContador");
-      }
-
-      if (totalPerguntas >= limitePerguntas) {
-        encerrarQuiz();
-      }
-    };
-    opcoesDiv.appendChild(btn);
-  });
+    atualizarContadores();
+    document.getElementById("pergunta").innerText = "Carregando pergunta...";
 }
-
-
 </script>
 </body>
 </html>
